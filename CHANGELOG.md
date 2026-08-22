@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.3] - 2026-08-22
+
+### Chores
+- chore(deps): bump mcp in the uv group across 1 directory (fcf3ec8)
+
+
 ## [0.9.2] - 2026-07-08
 
 ### Chores
