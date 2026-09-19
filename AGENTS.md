@@ -1,124 +1,184 @@
 # mcp-gitlab — Agent Context
 
-MCP server providing 83 tools for the GitLab REST API v4.
+MCP server exposing 83 tools, 7 resources, and 6 prompts over the GitLab REST API v4. Covers the
+full project lifecycle: code, reviews, CI/CD, releases, and issue tracking. Works against
+GitLab.com and self-hosted instances.
 
 ## Architecture
 
-- **Entry point**: `src/mcp_gitlab/__init__.py` — click CLI, loads env, runs FastMCP server
+- **Entry point**: `src/mcp_gitlab/__init__.py` — click CLI, loads `.env` via python-dotenv, runs the FastMCP server
 - **Client**: `src/mcp_gitlab/client.py` — async httpx client with all GitLab API methods
-- **Tools**: `src/mcp_gitlab/servers/gitlab.py` — all FastMCP tool registrations
-- **Resources**: `src/mcp_gitlab/servers/resources.py` — 6 MCP resources (workflow guides)
-- **Prompts**: `src/mcp_gitlab/servers/prompts.py` — 5 MCP prompts (multi-tool workflows)
-- **Config**: `src/mcp_gitlab/config.py` — `GitLabConfig` dataclass from env vars
-- **Exceptions**: `src/mcp_gitlab/exceptions.py` — `GitLabApiError`, `GitLabAuthError`, etc.
-- **Tests**: `tests/unit/test_tools.py` — 120+ tool-level tests via FastMCP test client
+- **Tools**: `src/mcp_gitlab/servers/gitlab.py` — all 83 FastMCP tool registrations
+- **Resources**: `src/mcp_gitlab/servers/resources.py` — 7 MCP resources (4 `resource://rules/*`, 3 `resource://guides/*`), content in `src/mcp_gitlab/resources/*.md`
+- **Prompts**: `src/mcp_gitlab/servers/prompts.py` — 6 MCP prompts (multi-tool workflows)
+- **Helpers**: `src/mcp_gitlab/servers/_helpers.py` — cached file loader with path-traversal guard, plus GitLab URL parsers. Most tools accept a project ID, a path, *or* a full GitLab URL for `project_id`; MR and pipeline URLs also yield the iid/id
+- **Config**: `src/mcp_gitlab/config.py` — `GitLabConfig` dataclass built from env vars
+- **Exceptions**: `src/mcp_gitlab/exceptions.py` — `GitLabError` base; `GitLabApiError`, `GitLabAuthError`, `GitLabNotFoundError`, `GitLabWriteDisabledError`
+- **Tests**: `tests/` — `unit/test_tools.py` (134 tool-level tests via the FastMCP in-memory client), plus `test_client.py`, `test_config.py`, `test_exceptions.py`, `test_prompts.py`, `test_resources.py`, and `tests/test_links.py`. Shared fixtures (`config`, `client`, `mock_api` via respx) live in `tests/conftest.py`
+
+## Development
+
+```bash
+uv sync --all-extras
+uv run pytest --cov
+uv run ruff check .
+uv run ruff format --check .   # CI runs --check; formatting drift fails the build
+```
+
+`pytest` uses `asyncio_mode = "auto"` — async tests need no marker. Ruff line length is 100,
+target py310; lint rules include `S` (bandit), `EM`, `N`, `UP`. `tests/**` waives `S101`,
+`S105`, `S106`.
 
 ## Patterns
 
 - All tools are `async def` returning JSON strings
-- Error handling: try/except wrapping every tool, returning `{"error": ...}` JSON
+- `_ok(data)` for success, `_err(e)` for failure; `_paginated(items)` for list responses
+- Pipeline and job payloads are trimmed by `_slim_pipeline` / `_slim_job`; tools expose `slim=True` by default
 - Write access control: `_check_write(ctx)` raises `GitLabWriteDisabledError` when `GITLAB_READ_ONLY=true`
 - Tags: every tool tagged with `{"gitlab", "<category>", "read"|"write"}`
 - Parameters use `Annotated[type, Field(description=...)]`
 - Client uses httpx with `PRIVATE-TOKEN` header auth
 - Project/group IDs can be numeric or URL-encoded paths
+- `gitlab_list_variables` / `gitlab_list_group_variables` return `***MASKED***` for variables GitLab marks as masked
 
 ## MCP Compliance Rules
 
-### Tool Annotations (MANDATORY)
+### Tool annotations (mandatory)
 Every tool MUST have `annotations={}` with at minimum `readOnlyHint`.
 - Read tools: `annotations={"readOnlyHint": True, "idempotentHint": True}`
-- Non-destructive write tools: `annotations={"readOnlyHint": False}`
-- Destructive write tools: `annotations={"destructiveHint": True, "readOnlyHint": False}`
+- Non-destructive writes: `annotations={"readOnlyHint": False}`
+- Destructive writes: `annotations={"destructiveHint": True, "readOnlyHint": False}`
 - Idempotent writes (PUT/update): add `idempotentHint: True`
 
-### Tool Descriptions
-- 1-2 sentences. Front-load what it does AND what it returns.
+### Tool descriptions
+1-2 sentences. Front-load what it does AND what it returns.
 - Bad: "This tool gets a merge request."
 - Good: "Get merge request details. Returns title, state, branches, author, diff_refs."
 
-### Error Handling
+### Error handling
 - Every tool MUST wrap in try/except and return `_err(e)` — never raise.
-- Error text MUST be actionable: include what went wrong and suggest a fix.
+- Error text MUST be actionable: what went wrong plus a suggested fix.
 - Never return concatenated JSON strings — always a single valid JSON object.
 - Never expose stack traces, tokens, or internal paths.
 
-### Parameter Design
-- Use `Annotated[type, Field(description="...")]` on every parameter.
-- Use `Literal[...]` for known value sets instead of plain `str`.
-- Every optional parameter must have a default.
+### Parameter design
+- `Annotated[type, Field(description="...")]` on every parameter.
+- `Literal[...]` for known value sets instead of plain `str`.
+- Every optional parameter has a default.
 - Flatten — no nested dicts unless truly necessary.
 
-### Read-Only Mode
-- Every write tool MUST call `_check_write(ctx)` before any mutation.
+### Read-only mode
+Every write tool MUST call `_check_write(ctx)` before any mutation.
 
-### Naming Convention
+### Naming convention
 - Pattern: `gitlab_{verb}_{resource}` (snake_case)
-- Verbs: create, get, list, search, update, delete, merge, rebase, retry, play, cancel, award, remove, share, unshare, compare, add, reply, resolve, approve, unapprove, subscribe, unsubscribe
+- Verbs: create, get, list, search, update, delete, merge, rebase, retry, play, cancel, award,
+  remove, share, unshare, compare, add, reply, resolve, approve, unapprove, subscribe, unsubscribe
 
-## Tool Categories
+## Tool Categories (83)
 
-Projects (4), Approvals (10), Groups (6), Branches (3), Commits (4), Merge Requests (15), MR Notes (6), MR Discussions (4), Pipelines (5), Jobs (4), Tags (4), Releases (5), CI/CD Variables (8), Issues (5)
+| Category | Count | Operations |
+|---|---|---|
+| Projects | 4 | get, create, delete, update merge settings |
+| Approvals | 10 | project-level approval settings; project and MR approval rules (list, create, update, delete) |
+| Groups | 6 | list, get groups; share/unshare project with group; share/unshare group with group |
+| Branches | 3 | list, create, delete |
+| Commits | 4 | list, get, create, compare refs |
+| Merge Requests | 15 | list, get, create, update, merge, merge sequence, rebase, changes/diffs, approve, unapprove, get approvals, list pipelines, list commits, subscribe, unsubscribe |
+| MR Notes | 6 | list, add, update, delete notes; award/remove emoji |
+| MR Discussions | 4 | list, create, reply, resolve |
+| Pipelines | 5 | list, get, create, retry, cancel |
+| Jobs | 4 | retry, play, cancel, get job log |
+| Tags | 4 | list, get, create, delete |
+| Releases | 5 | list, get, create, update, delete |
+| CI/CD Variables | 8 | project and group variables (list, create, update, delete) |
+| Issues | 5 | list, get, create, update, add comment |
 
-## Environment Variables
+Share/unshare tools are counted under Groups, not Projects. There is no `gitlab_list_jobs` —
+get job IDs from `gitlab_get_pipeline(..., include_jobs=True)`.
 
-- `GITLAB_URL` (required) — GitLab instance base URL
-- `GITLAB_TOKEN` or `GITLAB_PAT` (required) — Personal access token
-- `GITLAB_READ_ONLY` — disable mutations
-- `GITLAB_TIMEOUT` — request timeout seconds
-- `GITLAB_SSL_VERIFY` — SSL verification toggle
+## Common Workflows
 
-## Release Workflow
-
-Releases are handled via GitHub Actions — never bump versions manually.
-
-### How to release
-
-```bash
-# From the repo directory:
-gh workflow run release.yml -f bump=minor      # 0.4.0 → 0.5.0
-gh workflow run release.yml -f bump=patch      # 0.5.0 → 0.5.1
-gh workflow run release.yml -f bump=major      # 0.5.0 → 1.0.0
-
-# Dry run (preview changelog, no push):
-gh workflow run release.yml -f bump=minor -f dry_run=true
-```
-
-### What happens
-
-1. `release.yml` (workflow_dispatch) — bumps the version in `pyproject.toml`, `llms.txt`, `llms-full.txt`, `server.json`, `gemini-extension.json`; regenerates `uv.lock`; prepends a CHANGELOG.md entry; creates the release commit + tag via the GitHub API
-2. `publish.yml` (triggered by `v*` tag push) — builds wheel, publishes to PyPI, creates GitHub Release with auto-generated notes, then publishes to the MCP Registry
-
-### Rules
-- Never edit `pyproject.toml` version directly — the workflow owns it
-- Never create tags manually — the workflow creates them
-- Commit messages must follow conventional commits (`feat:`, `fix:`, `docs:`, etc.) for changelog generation
-- The release commit is authored by `github-actions[bot]` with message `chore(release): X.Y.Z`
+- **Code review**: `gitlab_list_mrs` → `gitlab_mr_changes` → `gitlab_list_mr_discussions` → `gitlab_add_mr_note` or `gitlab_create_mr_discussion` → `gitlab_resolve_discussion`
+- **Pipeline debugging**: `gitlab_list_pipelines` → `gitlab_get_pipeline` (`include_jobs=True`) → `gitlab_get_job_log` → `gitlab_retry_job`
+- **Release**: `gitlab_list_commits` → `gitlab_compare` → `gitlab_create_tag` → `gitlab_create_release`
+- **Branch protection**: `gitlab_list_project_approval_rules` → `gitlab_create_project_approval_rule` → `gitlab_update_project_merge_settings`
+- **Issue triage**: `gitlab_list_issues` → `gitlab_get_issue` → `gitlab_update_issue` → `gitlab_add_issue_comment`
 
 ## Prompts
 
-Prompts follow the resources pattern: prompt content lives as `.md` files in `src/mcp_gitlab/resources/prompts/`, loaded by `servers/prompts.py` via `_load_prompt()`, registered with `@mcp.prompt()`. Each prompt returns `list[Message]` with a user message (workflow template) and an assistant message (acknowledgment).
+Prompt content lives as `.md` files in `src/mcp_gitlab/resources/prompts/`, loaded by
+`servers/prompts.py` via `_load_prompt()` (`string.Template.safe_substitute` for parameters) and
+registered with `@mcp.prompt()`. Each returns `list[Message]`: a user message (workflow template)
+plus an assistant acknowledgment.
 
-- `review_mr` — MR review workflow (tags: gitlab, review)
-- `diagnose_pipeline` — CI debug workflow (tags: gitlab, ci)
-- `prepare_release` — Release preparation (tags: gitlab, release)
-- `setup_branch_protection` — Branch protection setup (tags: gitlab, settings)
-- `triage_issues` — Issue triage workflow (tags: gitlab, issues)
+| Prompt | Purpose | Tags |
+|---|---|---|
+| `review_mr` | MR review workflow | gitlab, review |
+| `approve_mr` | MR approval workflow | gitlab, review, approvals |
+| `diagnose_pipeline` | CI debug workflow | gitlab, ci |
+| `prepare_release` | Release preparation | gitlab, release |
+| `setup_branch_protection` | Branch protection setup | gitlab, settings |
+| `triage_issues` | Issue triage workflow | gitlab, issues |
 
-## Documentation Freshness (MANDATORY)
+## Environment Variables
 
-When any changeset adds, removes, or modifies tools, resources, or prompts, ALL documentation files MUST be updated in the same commit:
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `GITLAB_URL` | yes | — | Instance base URL; trailing slash stripped, `/api/v4` appended |
+| token (see below) | yes | — | Personal access token, OAuth2 token, or `$CI_JOB_TOKEN` |
+| `GITLAB_READ_ONLY` | no | `false` | `true`/`1`/`yes` disables all writes and deletes, enforced before any API call |
+| `GITLAB_TIMEOUT` | no | `30` | Request timeout in seconds |
+| `GITLAB_SSL_VERIFY` | no | `true` | `false`/`0`/`no` skips verification — self-signed certs only |
 
-- `README.md` — tool count in heading + intro, tool table, full tool reference, usage examples, permissions table
-- `llms.txt` — tool count in tagline and documentation link
-- `llms-full.txt` — tool count in tagline, documentation link, full tool reference section
-- `AGENTS.md` — tool count in intro, tool categories list
-- `GEMINI.md` — tool count in intro, tool categories, common workflows
-- `server.json` — description field (<=100 chars)
+Token is read from the first of `GITLAB_TOKEN`, `GITLAB_PAT`, `GITLAB_PERSONAL_ACCESS_TOKEN`,
+`GITLAB_API_TOKEN` that is set. Scope `api` for full access, `read_api` for read-only deployments.
+Tokens are never persisted — they are read from the environment at startup.
 
-Checklist: verify tool count matches actual registered tools, verify category list is complete, verify new tools appear in correct sections with parameters and annotations.
+CLI flags override env: `--gitlab-url`, `--gitlab-token`, `--read-only`, plus
+`--transport {stdio,sse,streamable-http}` with `--host` (default `127.0.0.1`) and `--port`
+(default `8000`); host/port apply only to non-stdio transports.
 
-## Known Limitations / Future Work
+## Release Workflow
 
-- 83 tools in one server file (exceeds 5-15 guideline). Consider splitting by category in a future refactor.
-- Errors are returned as successful tool results with `{"error": ...}` (soft-error pattern). Callers must inspect JSON content.
+Releases run through GitHub Actions — never bump versions manually.
+
+```bash
+gh workflow run release.yml -f bump=minor                  # 0.9.0 → 0.10.0
+gh workflow run release.yml -f bump=patch                  # 0.9.0 → 0.9.1
+gh workflow run release.yml -f bump=major                  # 0.9.0 → 1.0.0
+gh workflow run release.yml -f bump=minor -f dry_run=true  # preview changelog, no push
+```
+
+1. `release.yml` (workflow_dispatch) — bumps the version in `pyproject.toml`, `llms.txt`,
+   `llms-full.txt`, `server.json`, `gemini-extension.json`; regenerates `uv.lock`; prepends a
+   CHANGELOG.md entry; creates the release commit and tag via the GitHub API.
+2. `publish.yml` (triggered by a `v*` tag push) — builds the wheel, publishes to PyPI, creates the
+   GitHub Release with auto-generated notes, then publishes to the MCP Registry.
+
+Rules:
+- Never edit the `pyproject.toml` version directly — the workflow owns it.
+- Never create tags manually — the workflow creates them.
+- Commit messages must follow Conventional Commits (`feat:`, `fix:`, `docs:`, …) for changelog generation.
+- The release commit is authored by `github-actions[bot]` with message `chore(release): X.Y.Z`.
+
+## Documentation Freshness (mandatory)
+
+When a changeset adds, removes, or modifies tools, resources, or prompts, update ALL of these in
+the same commit:
+
+- `README.md` — counts in heading and intro, tool table, full tool reference, usage examples, permissions table
+- `llms.txt` — count in tagline and documentation link
+- `llms-full.txt` — count in tagline, documentation link, full tool reference section
+- `AGENTS.md` — counts in intro, tool category table
+- `GEMINI.md` — count in intro, tool categories, common workflows
+- `server.json` — description field (≤100 chars)
+
+Checklist: counts match the actual registered tools/resources/prompts; the category list is
+complete; new entries appear in the right sections with parameters and annotations.
+
+## Known Limitations
+
+- 83 tools in one server file, well past the 5-15 guideline. Split by category if it is refactored.
+- Errors come back as successful tool results carrying `{"error": ...}` (soft-error pattern);
+  callers must inspect the JSON content rather than relying on protocol-level errors.
