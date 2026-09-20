@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.6] - 2026-09-20
+
+### Chores
+- chore(deps): bump anyio in the uv group across 1 directory (92af51b)
+
+
 ## [0.9.5] - 2026-09-20
 
 ### Bug Fixes
