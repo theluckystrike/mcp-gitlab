@@ -2329,3 +2329,115 @@ class TestOptionalParams:
         )
         parsed = _parse(result)
         assert parsed["title"] == "Updated"
+
+
+# ═══════════════════════════════════════════════════════
+# Regression tests — defects found by audit
+# ═══════════════════════════════════════════════════════
+
+
+class TestDocstringContracts:
+    """Tools whose docstrings promise a specific return shape must deliver it."""
+
+    async def test_merge_mr_sequence_readonly_blocked(self, readonly_client):
+        """Read-only mode must return a JSON error, not blow up on an unbound local."""
+        client, router = readonly_client
+        result = await client.call_tool(
+            "gitlab_merge_mr_sequence",
+            {"project_id": "123", "mr_iids": [1, 2]},
+        )
+        parsed = _parse(result)
+        assert "error" in parsed
+        assert "read-only" in parsed["hint"].lower()
+        assert parsed["merged_so_far"] == []
+
+    async def test_merge_mr_sequence_partial_failure_reports_progress(self, tool_client):
+        """A mid-sequence API failure still reports which MRs already merged, plus a hint."""
+        client, router = tool_client
+        router.get("/projects/123/merge_requests/1").mock(
+            return_value=Response(200, json={"iid": 1, "detailed_merge_status": "mergeable"})
+        )
+        router.put("/projects/123/merge_requests/1/merge").mock(
+            return_value=Response(200, json={"iid": 1, "state": "merged"})
+        )
+        router.get("/projects/123/merge_requests/2").mock(
+            return_value=Response(404, json={"message": "404 Not found"})
+        )
+        result = await client.call_tool(
+            "gitlab_merge_mr_sequence",
+            {"project_id": "123", "mr_iids": [1, 2]},
+        )
+        parsed = _parse(result)
+        assert parsed["merged_so_far"] == [1]
+        assert parsed["status_code"] == 404
+        assert "hint" in parsed
+
+    async def test_delete_tag_returns_tag_key(self, tool_client):
+        """Docstring promises {status: deleted, tag} — not tag_name."""
+        client, router = tool_client
+        router.delete("/projects/123/repository/tags/v1.0").mock(return_value=Response(204))
+        result = await client.call_tool(
+            "gitlab_delete_tag", {"project_id": "123", "tag_name": "v1.0"}
+        )
+        parsed = _parse(result)
+        assert parsed == {"status": "deleted", "tag": "v1.0"}
+
+    async def test_delete_release_returns_confirmation_not_metadata(self, tool_client):
+        """Docstring promises {status: deleted, tag_name}, not the release object."""
+        client, router = tool_client
+        router.delete("/projects/123/releases/v1.0").mock(return_value=Response(204))
+        result = await client.call_tool(
+            "gitlab_delete_release", {"project_id": "123", "tag_name": "v1.0"}
+        )
+        parsed = _parse(result)
+        assert parsed == {"status": "deleted", "tag_name": "v1.0"}
+
+    async def test_get_job_log_zero_tail_returns_whole_log(self, tool_client):
+        """Docstring promises tail_lines=0 returns the whole log."""
+        client, router = tool_client
+        lines = "\n".join(f"line {i}" for i in range(300))
+        router.get("/projects/123/jobs/1/trace").mock(return_value=Response(200, text=lines))
+        result = await client.call_tool(
+            "gitlab_get_job_log",
+            {"project_id": "123", "job_id": 1, "tail_lines": 0},
+        )
+        parsed = _parse(result)
+        assert parsed["shown_lines"] == 300
+        assert parsed["total_lines"] == 300
+
+    async def test_get_job_log_rejects_negative_tail(self, tool_client):
+        """Negative tail_lines used to silently drop lines off the front; now rejected."""
+        client, router = tool_client
+        with pytest.raises(Exception, match="tail_lines"):
+            await client.call_tool(
+                "gitlab_get_job_log",
+                {"project_id": "123", "job_id": 1, "tail_lines": -5},
+            )
+
+    async def test_share_group_with_group_invalid_level_lists_valid_levels(self, tool_client):
+        """Error message must list the valid levels, matching its project-share sibling."""
+        client, router = tool_client
+        result = await client.call_tool(
+            "gitlab_share_group_with_group",
+            {"target_group_id": "9", "source_group_id": 1, "access_level": "bogus"},
+        )
+        parsed = _parse(result)
+        assert "bogus" in parsed["error"]
+        assert "maintainer" in parsed["error"]
+
+    async def test_tool_descriptions_have_no_blank_line_runs(self, tool_client):
+        """Docstrings ship verbatim as MCP tool descriptions — no stray blank-line runs."""
+        client, router = tool_client
+        tools = await client.list_tools()
+        offenders = [t.name for t in tools if t.description and "\n\n\n" in t.description]
+        assert offenders == []
+
+    async def test_update_docstrings_only_name_real_params(self, tool_client):
+        """Docstrings must not advertise parameters the tool does not accept."""
+        client, router = tool_client
+        tools = {t.name: t for t in await client.list_tools()}
+        for name in ("gitlab_update_mr", "gitlab_update_issue", "gitlab_update_release"):
+            desc = tools[name].description.lower()
+            params = tools[name].inputSchema["properties"]
+            assert "milestone" not in desc or any("milestone" in p for p in params)
+            assert "assignee" not in desc or any("assignee" in p for p in params)

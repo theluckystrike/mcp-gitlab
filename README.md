@@ -120,7 +120,7 @@ These accept any of the following token types:
 | **Groups** | 6 | list, get, share/unshare project, share/unshare group |
 | **Branches** | 3 | list, create, delete |
 | **Commits** | 4 | list, get (with diff), create, compare |
-| **Merge Requests** | 16 | list, get, create, update, merge, merge-sequence, rebase, changes, approve, unapprove, get approvals, list reviewers, list pipelines, list commits, subscribe, unsubscribe |
+| **Merge Requests** | 15 | list, get, create, update, merge, merge-sequence, rebase, changes, approve, unapprove, get approvals, list pipelines, list commits, subscribe, unsubscribe |
 | **MR Notes** | 6 | list, add, delete, update, award emoji, remove emoji |
 | **MR Discussions** | 4 | list, create (inline + multi-line), reply, resolve |
 | **Pipelines** | 5 | list, get (with jobs), create, retry, cancel |
@@ -232,7 +232,7 @@ These accept any of the following token types:
 | `gitlab_retry_job` | Retry a job |
 | `gitlab_play_job` | Trigger manual job |
 | `gitlab_cancel_job` | Cancel a job |
-| `gitlab_get_job_log` | Get job log output |
+| `gitlab_get_job_log` | Get job log output (last 200 lines by default; `tail_lines=0` for all) |
 
 ### Tags
 | Tool | Description |

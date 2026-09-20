@@ -726,7 +726,9 @@ async def gitlab_share_group_with_group(
         _check_write(ctx)
         level = ACCESS_LEVELS.get(access_level.lower())
         if level is None:
-            return _ok({"error": f"Invalid access level: {access_level}"})
+            return _ok(
+                {"error": f"Invalid access level: {access_level}. Use: {', '.join(ACCESS_LEVELS)}"}
+            )
         await _get_client(ctx).share_group_with_group(target_group_id, source_group_id, level)
         return _ok({"status": "shared"})
     except Exception as e:
@@ -1031,10 +1033,7 @@ async def gitlab_get_mr(
 ) -> str:
     """Get merge request details.
 
-
-
     Returns title, state, source/target branches, author, diff_refs, and merge status.
-
     """
     try:
         data = await _get_client(ctx).get_merge_request(project_id, mr_iid)
@@ -1111,7 +1110,7 @@ async def gitlab_update_mr(
     draft: Annotated[bool | None, Field(description="Set draft status")] = None,
     state_event: Annotated[str | None, Field(description="close or reopen")] = None,
 ) -> str:
-    """Update an MR's title, description, labels, assignees, milestone, or state event.
+    """Update an MR's title, description, target branch, labels, squash/draft flags, or state.
 
     Returns the updated MR object.
     """
@@ -1210,10 +1209,10 @@ async def gitlab_merge_mr_sequence(
 
     Returns a per-MR result list with merged/failed status and any error.
     """
+    merged: list[int] = []
     try:
         _check_write(ctx)
         client = _get_client(ctx)
-        merged: list[int] = []
         params: dict[str, Any] = {}
         if squash is not None:
             params["squash"] = squash
@@ -1238,13 +1237,9 @@ async def gitlab_merge_mr_sequence(
 
         return _ok({"status": "all_merged", "merged": merged})
     except Exception as e:
-        detail: dict[str, Any] = {"error": str(e), "merged_so_far": merged}
-        from ..exceptions import GitLabApiError
-
-        if isinstance(e, GitLabApiError):
-            detail["status_code"] = e.status_code
-            detail["body"] = e.body
-        return json.dumps(detail, indent=2, ensure_ascii=False)
+        detail = json.loads(_err(e))
+        detail["merged_so_far"] = merged
+        return _ok(detail)
 
 
 @mcp.tool(
@@ -1455,10 +1450,7 @@ async def gitlab_list_mr_discussions(
 ) -> str:
     """List discussions on a merge request.
 
-
-
-    Returns discussion threads with notes, excluding system notes.
-
+    Returns discussion threads with notes, excluding system-only threads.
     """
     try:
         data = await _get_client(ctx).list_mr_discussions(project_id, mr_iid)
@@ -1818,11 +1810,8 @@ async def gitlab_get_pipeline(
 ) -> str:
     """Get pipeline details, optionally with jobs.
 
-
-
     Returns id, status, ref, timing, web_url.
     Jobs include id, name, stage, status, timing, failure_reason, web_url.
-
     """
     try:
         client = _get_client(ctx)
@@ -1989,9 +1978,15 @@ async def gitlab_get_job_log(
         str, Field(description="Project ID, path, or full GitLab URL", min_length=1)
     ],
     job_id: Annotated[int, Field(description="Job ID")],
-    tail_lines: Annotated[int, Field(description="Number of lines from the end to return")] = 200,
+    tail_lines: Annotated[
+        int,
+        Field(description="Lines to return from the end of the log; 0 returns the whole log", ge=0),
+    ] = 200,
 ) -> str:
-    """Get a job's full log trace as text."""
+    """Get a job's log trace, truncated to the last tail_lines lines (default 200).
+
+    Returns {log, total_lines, shown_lines}. Pass tail_lines=0 for the whole log.
+    """
     try:
         log_text = await _get_client(ctx).get_job_log(project_id, job_id)
         lines = log_text.splitlines()
@@ -2107,7 +2102,7 @@ async def gitlab_delete_tag(
     ],
     tag_name: Annotated[str, Field(description="Tag name to delete", min_length=1)],
 ) -> str:
-    """Delete a tag. Returns a {status: deleted, tag_name} confirmation."""
+    """Delete a tag. Returns a {status: deleted, tag} confirmation."""
     try:
         _check_write(ctx)
         await _get_client(ctx).delete_tag(project_id, tag_name)
@@ -2226,7 +2221,7 @@ async def gitlab_update_release(
     description: Annotated[str | None, Field(description="New release description")] = None,
     released_at: Annotated[str | None, Field(description="New release date (ISO 8601)")] = None,
 ) -> str:
-    """Update a release's name, description, or milestones. Returns the updated release object."""
+    """Update a release's name, description, or release date. Returns the updated release."""
     try:
         _check_write(ctx)
         params: dict[str, Any] = {}
@@ -2255,7 +2250,7 @@ async def gitlab_delete_release(
 ) -> str:
     """Delete a release (the underlying tag is preserved).
 
-    Returns the deleted release's metadata.
+    Returns a {status: deleted, tag_name} confirmation.
     """
     try:
         _check_write(ctx)
@@ -2358,10 +2353,16 @@ async def gitlab_update_variable(
     protected: Annotated[bool | None, Field(description="Protected branches only")] = None,
     masked: Annotated[bool | None, Field(description="Mask in logs")] = None,
     raw: Annotated[bool | None, Field(description="Do not expand references")] = None,
-    environment_scope: Annotated[str | None, Field(description="Environment scope")] = None,
+    environment_scope: Annotated[
+        str | None,
+        Field(description="Environment scope filter — selects which scoped variable to update"),
+    ] = None,
     description: Annotated[str | None, Field(description="Variable description")] = None,
 ) -> str:
-    """Update a project CI/CD variable. Returns the updated variable object."""
+    """Update a project CI/CD variable. Returns the updated variable object.
+
+    environment_scope selects which scoped variable to update; it does not change the scope.
+    """
     try:
         _check_write(ctx)
         params: dict[str, Any] = {"value": value}
@@ -2652,7 +2653,7 @@ async def gitlab_update_issue(
     state_event: Annotated[str | None, Field(description="close or reopen")] = None,
     weight: Annotated[int | None, Field(description="Issue weight")] = None,
 ) -> str:
-    """Update an issue's title, description, labels, assignees, milestone, or state event.
+    """Update an issue's title, description, labels, assignees, weight, or state event.
 
     Returns the updated issue object.
     """

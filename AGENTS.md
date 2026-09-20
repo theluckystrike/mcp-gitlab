@@ -14,7 +14,7 @@ GitLab.com and self-hosted instances.
 - **Helpers**: `src/mcp_gitlab/servers/_helpers.py` — cached file loader with path-traversal guard, plus GitLab URL parsers. Most tools accept a project ID, a path, *or* a full GitLab URL for `project_id`; MR and pipeline URLs also yield the iid/id
 - **Config**: `src/mcp_gitlab/config.py` — `GitLabConfig` dataclass built from env vars
 - **Exceptions**: `src/mcp_gitlab/exceptions.py` — `GitLabError` base; `GitLabApiError`, `GitLabAuthError`, `GitLabNotFoundError`, `GitLabWriteDisabledError`
-- **Tests**: `tests/` — `unit/test_tools.py` (134 tool-level tests via the FastMCP in-memory client), plus `test_client.py`, `test_config.py`, `test_exceptions.py`, `test_prompts.py`, `test_resources.py`, and `tests/test_links.py`. Shared fixtures (`config`, `client`, `mock_api` via respx) live in `tests/conftest.py`
+- **Tests**: `tests/` — `unit/test_tools.py` (143 tool-level tests via the FastMCP in-memory client), plus `test_client.py`, `test_config.py`, `test_exceptions.py`, `test_prompts.py`, `test_resources.py`, and `tests/test_links.py`. Shared fixtures (`config`, `client`, `mock_api` via respx) live in `tests/conftest.py`
 
 ## Development
 

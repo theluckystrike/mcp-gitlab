@@ -133,7 +133,7 @@ uvx mcp-gitlab --gitlab-url https://gitlab.example.com --gitlab-token glpat-xxx 
 | `gitlab_create_commit` | Create a commit with multiple file actions |
 | `gitlab_compare` | Compare two branches, tags, or commits |
 
-### Merge Requests (16)
+### Merge Requests (15)
 
 | Tool | Description |
 |------|-------------|
@@ -190,7 +190,7 @@ uvx mcp-gitlab --gitlab-url https://gitlab.example.com --gitlab-token glpat-xxx 
 | `gitlab_retry_job` | Retry a failed job |
 | `gitlab_play_job` | Trigger a manual job |
 | `gitlab_cancel_job` | Cancel a running job |
-| `gitlab_get_job_log` | Get the log (trace) output of a job |
+| `gitlab_get_job_log` | Get the log (trace) output of a job — last 200 lines by default, `tail_lines=0` for the whole log |
 
 ### Tags (4)
 
@@ -234,7 +234,7 @@ uvx mcp-gitlab --gitlab-url https://gitlab.example.com --gitlab-token glpat-xxx 
 | `gitlab_update_issue` | Update an existing issue |
 | `gitlab_add_issue_comment` | Add a comment to an issue |
 
-## Resources (6)
+## Resources (7)
 
 The server exposes curated workflow guides as MCP resources that clients can read on demand.
 
