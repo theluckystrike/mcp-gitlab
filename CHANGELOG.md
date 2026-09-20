@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.5] - 2026-09-20
+
+### Bug Fixes
+- fix(ci): changelog classified commits by whole message, not subject (418527e)
+
+### Chores
+- chore(deps): bump cryptography in the uv group across 1 directory (ce94c53)
+
+
 ## [0.9.4] - 2026-09-20
 
 ### Bug Fixes

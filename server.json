@@ -6,12 +6,12 @@
     "url": "https://github.com/vish288/mcp-gitlab",
     "source": "github"
   },
-  "version": "0.9.4",
+  "version": "0.9.5",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-gitlab",
-      "version": "0.9.4",
+      "version": "0.9.5",
       "transport": {
         "type": "stdio"
       },
