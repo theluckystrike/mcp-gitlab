@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.7] - 2026-09-20
+
+### Bug Fixes
+- fix(deps): bump click to clear PYSEC-2026-2132 (a126341)
+
+
 ## [0.9.6] - 2026-09-20
 
 ### Chores
