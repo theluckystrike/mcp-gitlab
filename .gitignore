@@ -35,3 +35,6 @@ Thumbs.db
 .claude/
 .cursorrules
 .cursor/
+
+# 1Password shell-plugin config: local tool state, not project config.
+.op/
