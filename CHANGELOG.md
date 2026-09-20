@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.4] - 2026-09-20
+
+### Bug Fixes
+- fix: correct error masking in merge sequence, tighten docs and messages (7b43094)
+
+### Documentation
+- docs: consolidate GEMINI.md into AGENTS.md (bcfb75f)
+
+### Chores
+- chore: ignore local 1Password plugin state (8d0b554)
+
+
 ## [0.9.3] - 2026-08-22
 
 ### Chores
